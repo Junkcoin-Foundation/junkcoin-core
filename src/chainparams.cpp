@@ -76,8 +76,12 @@ public:
     CMainParams() {
         strNetworkID = "main";
 
-        // Not used in JunkCoin
-        consensus.nSubsidyHalvingInterval = 100000;
+        // Halving schedule
+        consensus.nFirstHalvingHeight = 262800;      // January 2024
+        consensus.nSecondHalvingHeight = 394200;     // After 3 months
+        consensus.nThirdHalvingHeight = 657000;      // After 10 months
+        consensus.nFourthHalvingHeight = 1182600;    // After 22 months
+        consensus.nSubsidyHalvingInterval = 788400;  // Every 1.5 years after fourth halving
 
         consensus.nMajorityEnforceBlockUpgrade = 1500;
         consensus.nMajorityRejectBlockOutdated = 1900;
@@ -90,9 +94,10 @@ public:
 
         consensus.powLimit = uint256S("0x00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); // ~uint256(0) >> 20;
         consensus.nPowTargetTimespan = 24 * 60 * 60; // pre-digishield: 1 day
-        consensus.nPowTargetSpacing = 60 ; // 1 minute
+        consensus.nPowTargetSpacing = 60; // 1 minute
         consensus.nCoinbaseMaturity = 70; //confirm
         consensus.fPowNoRetargeting = false;
+        consensus.nStrictBlockTimeActivationHeight = 262800; // Activation height for strict block timing
 
         consensus.nRuleChangeActivationThreshold = 9576; // 95% of 10,080
         consensus.nMinerConfirmationWindow = 10080; // 60 * 24 * 7 = 10,080 blocks, or one week
@@ -185,8 +190,8 @@ public:
         assert(consensus.hashGenesisBlock == uint256S("0xa2effa738145e377e08a61d76179c21703e13e48910b30a2a87f0dfe794b64c6"));
         assert(genesis.hashMerkleRoot == uint256S("0x3de124b0274307911fe12550e96bf76cb92c12835db6cb19f82658b8aca1dbc8"));
 
-        // Note that of those with the service bits flag, most only support a subset of possible options
-        //vSeeds.push_back(CDNSSeedData("junkcoinfoundation.org", "dnsseed.junkcoinfoundation.org", true));
+        // DNS seeds
+        vSeeds.push_back(CDNSSeedData("junk-coin.com", "mainnet.junk-coin.com", true));
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,16);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
@@ -259,7 +264,12 @@ public:
     CTestNetParams() {
         strNetworkID = "test";
 
-        consensus.nSubsidyHalvingInterval = 100000;
+        // Testnet halving schedule: starts at 2880 with subsequent halvings every 28800 blocks
+        consensus.nFirstHalvingHeight = 2880;        // First halving
+        consensus.nSecondHalvingHeight = 31680;      // 2880 + (10 * 2880)
+        consensus.nThirdHalvingHeight = 60480;       // 31680 + (10 * 2880)
+        consensus.nFourthHalvingHeight = 89280;      // 60480 + (10 * 2880)
+        consensus.nSubsidyHalvingInterval = 28800;   // 10 * 2880 blocks between halvings
 
         consensus.nMajorityEnforceBlockUpgrade = 1500;
         consensus.nMajorityRejectBlockOutdated = 1900;
@@ -278,6 +288,7 @@ public:
         consensus.nPowTargetSpacing = 60; // 1 minute
         consensus.nCoinbaseMaturity = 30;
         consensus.fPowNoRetargeting = false;
+        consensus.nStrictBlockTimeActivationHeight = 2880; // Activation height for strict block timing on testnet
 
         consensus.nRuleChangeActivationThreshold = 9576; // 95% of 10,080
         consensus.nMinerConfirmationWindow = 10080; // 60 * 24 * 7 = 10,080 blocks, or one week
@@ -370,13 +381,12 @@ public:
         //assert(consensus.hashGenesisBlock == uint256S("0x324635c8e36f663b0adb126a21ad0bd7fa43cc5c5f15aec992bf4dde650bc0ea"));
         //assert(genesis.hashMerkleRoot == uint256S("0x6f80efd038566e1e3eab3e1d38131604d06481e77f2462235c6a9a94b1f8abf9"));
 
-        // nodes with support for servicebits filtering should be at the top
-        //vSeeds.push_back(CDNSSeedData("belscan.io", "testnetseed.belscan.io", true));
-        //vSeeds.push_back(CDNSSeedData("belscan.io", "testnetseeder.belscan.io", true));
+        // DNS seeds
+        vSeeds.push_back(CDNSSeedData("junk-coin.com", "testnet.junk-coin.com", true));
 
-        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,16);
-        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
-        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,150);
+        base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,111); // Testnet addresses start with 'm' or 'n'
+        base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,196); // Testnet script addresses start with '2'
+        base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,239); // Testnet private keys start with '9' or 'c'
         base58Prefixes[EXT_PUBLIC_KEY] = boost::assign::list_of(0x02)(0xfa)(0xca)(0xfd).convert_to_container<std::vector<unsigned char> >();
         base58Prefixes[EXT_SECRET_KEY] = boost::assign::list_of(0x02)(0xfa)(0xc3)(0x98).convert_to_container<std::vector<unsigned char> >();
 
@@ -388,17 +398,14 @@ public:
         fMineBlocksOnDemand = true;
 
         checkpointData = (CCheckpointData) {
-                boost::assign::map_list_of
-                        (      0, uint256S("0xa2effa738145e377e08a61d76179c21703e13e48910b30a2a87f0dfe794b64c6"))
+            boost::assign::map_list_of
+            (0, uint256S("0xa2effa738145e377e08a61d76179c21703e13e48910b30a2a87f0dfe794b64c6"))
         };
 
         chainTxData = ChainTxData{
-                // Data as of block ed7d266dcbd8bb8af80f9ccb8deb3e18f9cc3f6972912680feeb37b090f8cee0 (height 4303965).
-                // Tx estimate based on average between 2021-07-01 (3793538) and 2022-07-01 (4288126)
-                0, // * UNIX timestamp of last checkpoint block
-                0,   // * total number of transactions between genesis and last checkpoint
-                //   (the tx=... number in the SetBestChain debug.log lines)
-                0        // * estimated number of transactions per second after checkpoint
+            0,
+            0,
+            0
         };
     }
 };
@@ -415,8 +422,12 @@ private:
 public:
     CRegTestParams() {
         strNetworkID = "regtest";
-        // Not used in JunkCoin
-        consensus.nSubsidyHalvingInterval = 100000;
+        // Testnet halving schedule: starts at 2880 with subsequent halvings every 28800 blocks
+        consensus.nFirstHalvingHeight = 2880;        // First halving
+        consensus.nSecondHalvingHeight = 31680;      // 2880 + (10 * 2880)
+        consensus.nThirdHalvingHeight = 60480;       // 31680 + (10 * 2880)
+        consensus.nFourthHalvingHeight = 89280;      // 60480 + (10 * 2880)
+        consensus.nSubsidyHalvingInterval = 28800;   // 10 * 2880 blocks between halvings
 
         consensus.nMajorityEnforceBlockUpgrade = 1500;
         consensus.nMajorityRejectBlockOutdated = 1900;

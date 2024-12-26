@@ -15,7 +15,7 @@ define $(package)_preprocess_cmds
   patch -p1 < $($(package)_patch_dir)/clock-unused-nsecs.patch && \
   patch -p1 < $($(package)_patch_dir)/remove_libstd_link.patch && \
   patch -p1 < $($(package)_patch_dir)/0002-disable-pthread_set_name_np.patch && \
-  cp -f $(BASEDIR)/config.guess $(BASEDIR)/config.sub config
+  cp -f $(shell pwd)/../build-aux/config.guess $(shell pwd)/../build-aux/config.sub config
 endef
 
 define $(package)_config_cmds

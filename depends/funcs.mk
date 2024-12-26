@@ -175,7 +175,7 @@ $($(1)_extracted): | $($(1)_fetched)
 $($(1)_preprocessed): | $($(1)_dependencies) $($(1)_extracted)
 	$(AT)echo Preprocessing $(1)...
 	$(AT)mkdir -p $$(@D) $($(1)_patch_dir)
-	$(AT)$(foreach patch,$($(1)_patches),cd $(PATCHES_PATH)/$(1); cp $(patch) $($(1)_patch_dir) ;)
+	$(AT)$(foreach patch,$($(1)_patches),cp $(PATCHES_PATH)/$(1)/$(patch) $($(1)_patch_dir)/ ;)
 	$(AT)cd $$(@D); $(call $(1)_preprocess_cmds, $(1))
 	$(AT)touch $$@
 $($(1)_configured): | $($(1)_preprocessed)

@@ -4,26 +4,140 @@ on:
   push:
     branches:
       - dev
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-linux:
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Install dependencies
-        run: sudo apt-get install -y build-essential libboost-all-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libtool autotools-dev automake pkg-config bsdmainutils curl git python3 libboost-all-dev
+          sudo apt-get install -y qtbase5-dev qttools5-dev-tools libqt5gui5 libqt5core5a libqt5dbus5 qttools5-dev qtwayland5
+          sudo apt-get install -y libqrencode-dev protobuf-compiler
 
       - name: Build project
         run: |
           ./autogen.sh
-          ./configure
-          make
+          ./configure --with-gui=qt5
+          make -j4
 
       - name: Run tests
         run: make check
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(grep "AC_INIT" configure.ac | cut -d[ -f3 | cut -d] -f1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Linux distribution
+        run: |
+          make install DESTDIR=$PWD/installed
+          tar -czf junkcoin-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz installed/
+
+      - name: Archive Linux artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-dist
+          path: junkcoin-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz
+
+  build-windows:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(grep "AC_INIT" configure.ac | cut -d[ -f3 | cut -d] -f1)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libtool autotools-dev automake pkg-config bsdmainutils curl git nsis
+          sudo apt-get install -y g++-mingw-w64-x86-64
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+
+      - name: Prepare depends
+        run: |
+          cd depends
+          make HOST=x86_64-w64-mingw32 -j4
+          cd ..
+
+      - name: Build Windows binary
+        run: |
+          ./autogen.sh
+          CONFIG_SITE=$PWD/depends/x86_64-w64-mingw32/share/config.site ./configure --prefix=/ --disable-ccache --disable-maintainer-mode --disable-dependency-tracking --enable-reduce-exports --disable-bench --disable-gui-tests CFLAGS="-O2 -g" CXXFLAGS="-O2 -g" --with-gui=qt5
+          make -j4
+
+      - name: Create Windows installer
+        run: |
+          make deploy
+          cp share/setup.nsi .
+          makensis setup.nsi
+          mkdir win64
+          cp junkcoin-*-win64-setup.exe win64/junkcoin-${{ steps.get_version.outputs.version }}-win64-setup.exe
+          cp src/junkcoind.exe win64/
+          cp src/junkcoin-cli.exe win64/
+          cp src/junkcoin-tx.exe win64/
+          cp src/qt/junkcoin-qt.exe win64/
+          cd win64
+          zip -r ../junkcoin-${{ steps.get_version.outputs.version }}-win64.zip *
+
+      - name: Archive Windows artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-dist
+          path: |
+            junkcoin-${{ steps.get_version.outputs.version }}-win64-setup.exe
+            junkcoin-${{ steps.get_version.outputs.version }}-win64.zip
+
+  create-release:
+    runs-on: ubuntu-22.04
+    needs: [build-linux, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: linux-dist
+          path: dist
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: windows-dist
+          path: dist
+
+      - name: Upload Release Assets
+        run: |
+          for file in dist/*; do
+            gh release upload ${{ github.ref_name }} "$file" --clobber
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

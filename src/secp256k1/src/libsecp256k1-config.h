@@ -15,13 +15,13 @@
 #define ENABLE_MODULE_RECOVERY 1
 
 /* Define this symbol if OpenSSL EC functions are available */
-/* #undef ENABLE_OPENSSL_TESTS */
+#define ENABLE_OPENSSL_TESTS 1
 
 /* Define this symbol if __builtin_expect is available */
 #define HAVE_BUILTIN_EXPECT 1
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
-#define HAVE_DLFCN_H 1
+/* #undef HAVE_DLFCN_H */
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #define HAVE_INTTYPES_H 1

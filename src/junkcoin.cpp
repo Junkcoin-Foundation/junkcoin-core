@@ -170,10 +170,13 @@ CAmount GetJunkcoinBlockSubsidy(int nHeight, int nFees, const Consensus::Params&
 {
     CAmount nSubsidy = 50 * COIN;
 
-    if(nHeight > 6220800)   // after about 12 years or 6220800 blocks, no more mining
-        return 0;
+    // No mining rewards after October 2025 (~block 1,707,600) for mainnet
+    // For testnet, no mining rewards after block 89,280
+    if ((consensusParams.nAuxpowChainId == 0x2020 && nHeight > 1707600) ||  // Mainnet
+        (consensusParams.nAuxpowChainId == 0x2021 && nHeight > 89280))      // Testnet
+        return nFees;
 
-    if(nHeight < 101)   // the first 100 blocks = 1 millon junkcoins will serve as bounty (pool, exchange, faucet, wiki etc), reserved.
+    if(nHeight < 101)   // First 100 blocks = 1 million junkcoins for bounty
     {
         nSubsidy = 1000 * COIN;
     }
@@ -191,23 +194,52 @@ CAmount GetJunkcoinBlockSubsidy(int nHeight, int nFees, const Consensus::Params&
     }
     else
     {
-        // Subsidy is cut in half every 1036800 blocks, which will occur approximately every 2 years
-        nSubsidy >>= (nHeight / 1036800); // Junkcoin: 1036.8K blocks in ~2 years
+        nSubsidy = 50 * COIN;
+        
+        if (consensusParams.nAuxpowChainId == 0x2020) {  // Mainnet
+            // First halving at block 262,800 (January)
+            if (nHeight >= consensusParams.nFirstHalvingHeight) {
+                nSubsidy = 25 * COIN;
+                
+                // Second halving after 131,400 blocks (3 months)
+                if (nHeight >= consensusParams.nSecondHalvingHeight) {
+                    nSubsidy = 12.5 * COIN;
+                    
+                    // Third halving after 525,600 blocks (10 months)
+                    if (nHeight >= consensusParams.nThirdHalvingHeight) {
+                        nSubsidy = 6.25 * COIN;
+                        
+                        // Fourth halving after 788,400 blocks (22 months)
+                        if (nHeight >= consensusParams.nFourthHalvingHeight) {
+                            nSubsidy = 3.125 * COIN;
+                            
+                            // Further halvings every 788,400 blocks (1.5 years)
+                            int additionalHalvings = (nHeight - consensusParams.nFourthHalvingHeight) / consensusParams.nSubsidyHalvingInterval;
+                            nSubsidy >>= additionalHalvings;
+                        }
+                    }
+                }
+            }
+        }
+        else {  // Testnet
+            // Halving every 28800 blocks starting at block 2880
+            if (nHeight >= consensusParams.nFirstHalvingHeight) {
+                int halvings = 1 + (nHeight - consensusParams.nFirstHalvingHeight) / consensusParams.nSubsidyHalvingInterval;
+                nSubsidy >>= halvings;
+            }
+        }
 
-		int rand = generateMTRandom(nHeight, 100000);
-		// printf("===>> nHeight = %d, Rand = %d\n", nHeight, rand);
-
-		if(rand > 99990)
-		{
-			nSubsidy = 1000 * COIN;
-		}
-		else if (rand < 1001)
-		{
-			nSubsidy *= 3;
-		}
+        // Apply bonus rewards (unchanged)
+        int rand = generateMTRandom(nHeight, 100000);
+        if(rand > 99990) // 0.01% chance for 20x reward
+        {
+            nSubsidy *= 20;
+        }
+        else if (rand < 1001) // 1% chance for 3x reward
+        {
+            nSubsidy *= 3;
+        }
     }
 
     return nSubsidy + nFees;
 }
-
-

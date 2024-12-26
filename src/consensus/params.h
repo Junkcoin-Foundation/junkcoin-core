@@ -43,7 +43,12 @@ struct BIP9Deployment {
  */
 struct Params {
     uint256 hashGenesisBlock;
-    int nSubsidyHalvingInterval;
+    /** Block heights for the new halving schedule */
+    int32_t nFirstHalvingHeight;    // First halving at block 262,800 (January)
+    int32_t nSecondHalvingHeight;   // Second halving after 131,400 blocks (3 months)
+    int32_t nThirdHalvingHeight;    // Third halving after 525,600 blocks (10 months)
+    int32_t nFourthHalvingHeight;   // Fourth halving after 788,400 blocks (22 months)
+    int32_t nSubsidyHalvingInterval; // Regular halving interval after fourth halving (788,400 blocks)
     /** Used to check majorities for block version upgrade */
     int nMajorityEnforceBlockUpgrade;
     int nMajorityRejectBlockOutdated;
@@ -71,6 +76,9 @@ struct Params {
     int64_t nPowTargetSpacing;
     int64_t nPowTargetTimespan;
     int64_t DifficultyAdjustmentInterval() const { return nPowTargetTimespan / nPowTargetSpacing; }
+
+    /** Height at which strict block timing is enforced */
+    int32_t nStrictBlockTimeActivationHeight;
 
     /** Junkcoin-specific parameters */
     bool fDigishieldDifficultyCalculation;

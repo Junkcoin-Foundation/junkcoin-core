@@ -3140,13 +3140,22 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
         return state.DoS(100, false, REJECT_INVALID, "bad-diffbits", false, "incorrect proof of work");
     }
 
-    // Check timestamp against prev
-    if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
-        return state.Invalid(false, REJECT_INVALID, "time-too-old", "block's timestamp is too early");
+    // Check block timing
+    if (nHeight >= consensusParams.nStrictBlockTimeActivationHeight) {
+        // After activation height: Enforce exact 1-minute block spacing
+        int64_t expectedTime = pindexPrev->GetBlockTime() + consensusParams.nPowTargetSpacing;
+        if (block.GetBlockTime() != expectedTime) {
+            return state.Invalid(false, REJECT_INVALID, "invalid-time", 
+                strprintf("block timestamp %d not at expected time %d", block.GetBlockTime(), expectedTime));
+        }
+    } else {
+        // Before activation height: Use original timing rules
+        if (block.GetBlockTime() <= pindexPrev->GetMedianTimePast())
+            return state.DoS(100, false, REJECT_INVALID, "time-too-old", false, "block's timestamp is too early");
 
-    // Check timestamp
-    if (block.GetBlockTime() > nAdjustedTime + 2 * 60 * 60)
-        return state.Invalid(false, REJECT_INVALID, "time-too-new", "block timestamp too far in the future");
+        if (block.GetBlockTime() > nAdjustedTime + 2 * 60 * 60)
+            return state.DoS(100, false, REJECT_INVALID, "time-too-new", false, "block timestamp too far in the future");
+    }
 
     // Reject outdated version blocks when 95% (75% on testnet) of the network has upgraded:
     // check for version 2, 3 and 4 upgrades

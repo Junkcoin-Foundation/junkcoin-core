@@ -8,7 +8,15 @@
 
 #include "tinyformat.h"
 
-const std::string CURRENCY_UNIT = "JKC";
+#include "chainparams.h"
+#include "chainparamsbase.h"
+
+const std::string CURRENCY_UNIT = GetCurrencyUnit();
+
+std::string GetCurrencyUnit()
+{
+    return (Params().NetworkIDString() == CBaseChainParams::TESTNET) ? "tJKC" : "JKC";
+}
 
 CFeeRate::CFeeRate(const CAmount& nFeePaid, size_t nBytes_)
 {
@@ -40,5 +48,5 @@ CAmount CFeeRate::GetFee(size_t nBytes_) const
 
 std::string CFeeRate::ToString() const
 {
-    return strprintf("%d.%08d %s/kB", nSatoshisPerK / COIN, nSatoshisPerK % COIN, CURRENCY_UNIT);
+    return strprintf("%d.%08d %s/kB", nSatoshisPerK / COIN, nSatoshisPerK % COIN, GetCurrencyUnit());
 }

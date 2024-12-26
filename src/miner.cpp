@@ -62,10 +62,23 @@ public:
 int64_t UpdateTime(CBlockHeader* pblock, const Consensus::Params& consensusParams, const CBlockIndex* pindexPrev)
 {
     int64_t nOldTime = pblock->nTime;
-    int64_t nNewTime = std::max(pindexPrev->GetMedianTimePast()+1, GetAdjustedTime());
+    int64_t nNewTime;
 
-    if (nOldTime < nNewTime)
-        pblock->nTime = nNewTime;
+    // After activation height: Force exact 1-minute spacing between blocks
+    if (pindexPrev->nHeight + 1 >= consensusParams.nStrictBlockTimeActivationHeight) {
+        nNewTime = pindexPrev->GetBlockTime() + consensusParams.nPowTargetSpacing;
+    } else {
+        // Before activation: Use adjusted time
+        nNewTime = GetAdjustedTime();
+        // Ensure it's greater than median time
+        if (nNewTime <= pindexPrev->GetMedianTimePast())
+            nNewTime = pindexPrev->GetMedianTimePast() + 1;
+        // Ensure it's not too far in the future
+        if (nNewTime > GetAdjustedTime() + 2 * 60 * 60)
+            nNewTime = GetAdjustedTime() + 2 * 60 * 60;
+    }
+    
+    pblock->nTime = nNewTime;
 
     // Updating time can change work required on testnet:
     if (consensusParams.fPowAllowMinDifficultyBlocks)

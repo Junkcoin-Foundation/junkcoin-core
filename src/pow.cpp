@@ -16,18 +16,20 @@
 // Determine if the for the given block, a min difficulty setting applies
 bool AllowMinDifficultyForBlock(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
-    // check if the chain allows minimum difficulty blocks
-    if (!params.fPowAllowMinDifficultyBlocks)
-        return false;
-
-    // junkcoin: Magic number at which reset protocol switches
-    // check if we allow minimum difficulty at this block-height
-    if ((unsigned)pindexLast->nHeight < params.nHeightEffective) {
-        return false;
+    // Check if strict block timing is active
+    if (pindexLast->nHeight + 1 >= params.nStrictBlockTimeActivationHeight) {
+        // Enforce strict 1-minute block spacing
+        int64_t expectedTime = pindexLast->GetBlockTime() + params.nPowTargetSpacing;
+        int64_t actualTime = pblock->GetBlockTime();
+        
+        // Only allow blocks exactly at the target spacing
+        if (actualTime != expectedTime) {
+            LogPrintf("Block time %d not at expected time %d\n", actualTime, expectedTime);
+            return false;
+        }
     }
 
-    // Allow for a minimum block time if the elapsed time > 2*nTargetSpacing
-    return (pblock->GetBlockTime() > pindexLast->GetBlockTime() + params.nPowTargetSpacing*2);
+    return params.fPowAllowMinDifficultyBlocks;
 }
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
@@ -47,33 +49,25 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
         return nProofOfWorkLimit;
     }
 
-    // Only change once per difficulty adjustment interval
-    bool fNewDifficultyProtocol = (pindexLast->nHeight+1 >= 69360);
+    // Check if strict block timing is active
+    if (pindexLast->nHeight + 1 >= params.nStrictBlockTimeActivationHeight) {
+        // Enforce strict 1-minute block spacing
+        int64_t expectedTime = pindexLast->GetBlockTime() + params.nPowTargetSpacing;
+        int64_t actualTime = pblock->GetBlockTime();
+        
+        // Return maximum difficulty if block time is not exactly at target spacing
+        if (actualTime != expectedTime) {
+            LogPrintf("Block time %d not at expected time %d, enforcing high difficulty\n", actualTime, expectedTime);
+            return nProofOfWorkLimit;
+        }
+    }
 
+    // Only change difficulty on interval
+    bool fNewDifficultyProtocol = (pindexLast->nHeight+1 >= 69360);
     const int64_t nTargetTimespanCurrent = fNewDifficultyProtocol ? params.nPowTargetTimespan : (params.nPowTargetTimespan*12);
     const int64_t difficultyAdjustmentInterval = nTargetTimespanCurrent / params.nPowTargetSpacing;
-
-    //const int64_t difficultyAdjustmentInterval = fNewDifficultyProtocol
-    //                                             ? 1
-    //                                             : params.DifficultyAdjustmentInterval();
-    if ((pindexLast->nHeight+1) % difficultyAdjustmentInterval != 0)
-    {
-        if (params.fPowAllowMinDifficultyBlocks)
-        {
-            // Special difficulty rule for testnet:
-            // If the new block's timestamp is more than 2* 10 minutes
-            // then allow mining of a min-difficulty block.
-            if (pblock->GetBlockTime() > pindexLast->GetBlockTime() + params.nPowTargetSpacing*2)
-                return nProofOfWorkLimit;
-            else
-            {
-                // Return the last non-special-min-difficulty-rules-block
-                const CBlockIndex* pindex = pindexLast;
-                while (pindex->pprev && pindex->nHeight % params.DifficultyAdjustmentInterval() != 0 && pindex->nBits == nProofOfWorkLimit)
-                    pindex = pindex->pprev;
-                return pindex->nBits;
-            }
-        }
+    
+    if ((pindexLast->nHeight+1) % difficultyAdjustmentInterval != 0) {
         return pindexLast->nBits;
     }
 
