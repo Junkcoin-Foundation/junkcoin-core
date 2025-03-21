@@ -668,7 +668,7 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
     map<uint256, int64_t> setTxIndex;
     int i = 0;
     
-    // Proses transaksi untuk coinbase dan non-coinbase
+    // Process transactions for coinbase and non-coinbase
     for (const auto& it : pblock->vtx) {
         const CTransaction& tx = *it;
         uint256 txHash = tx.GetHash();
@@ -805,7 +805,13 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
 
     result.pushKV("previousblockhash", pblock->hashPrevBlock.GetHex());
     result.pushKV("transactions", transactions);
-    if (coinbasetxn) {
+    
+    // Only show coinbasetxn when development fund is active
+    int nHeight = pindexPrev->nHeight + 1;
+    bool isDevFundActive = (nHeight > Params().GetDevelopmentFundStartHeight()) && 
+                          (nHeight <= Params().GetLastDevelopmentFundBlockHeight());
+    
+    if (coinbasetxn && isDevFundActive) {
         assert(txCoinbase.isObject());
         result.pushKV("coinbasetxn", txCoinbase);
         result.pushKV("coinbaseaux", aux);
@@ -814,6 +820,7 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
         result.pushKV("coinbaseaux", aux);
         result.pushKV("coinbasevalue", (int64_t)(*pblock->vtx[0]).vout[0].nValue);
     }
+    
     result.pushKV("longpollid", chainActive.Tip()->GetBlockHash().GetHex() + i64tostr(nTransactionsUpdatedLast));
     result.pushKV("target", hashTarget.GetHex());
     result.pushKV("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1);
