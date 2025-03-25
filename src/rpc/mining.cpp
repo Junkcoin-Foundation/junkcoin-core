@@ -367,7 +367,6 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
             "    https://github.com/bitcoin/bips/blob/master/bip-0023.mediawiki\n"
             "    https://github.com/bitcoin/bips/blob/master/bip-0009.mediawiki#getblocktemplate_changes\n"
             "    https://github.com/bitcoin/bips/blob/master/bip-0145.mediawiki\n"
-
             "\nArguments:\n"
             "1. template_request         (json object, optional) A json object in the following spec\n"
             "     {\n"
@@ -382,7 +381,6 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
             "       ]\n"
             "     }\n"
             "\n"
-
             "\nResult:\n"
             "{\n"
             "  \"version\" : n,                    (numeric) The preferred block version\n"
@@ -428,7 +426,6 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
             "  \"bits\" : \"xxxxxxxx\",              (string) compressed target of next block\n"
             "  \"height\" : n                      (numeric) The height of the next block\n"
             "}\n"
-
             "\nExamples:\n"
             + HelpExampleCli("getblocktemplate", "")
             + HelpExampleRpc("getblocktemplate", "")
@@ -440,7 +437,6 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
 
     std::string strMode = "template";
     UniValue lpval = NullUniValue;
-    bool coinbasetxn = true;
     std::set<std::string> setClientRules;
     int64_t nMaxVersionPreVB = -1;
     if (request.params.size() > 0)
@@ -588,34 +584,26 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
         nStart = GetTime();
         fLastTemplateSupportsSegwit = fSupportsSegwit;
 
+        // Check if current block is within development fund active range
+        int nHeight = pindexPrevNew->nHeight + 1;
+        bool isDevFundActive = (nHeight > Params().GetDevelopmentFundStartHeight()) && 
+                               (nHeight <= Params().GetLastDevelopmentFundBlockHeight());
+
         // Create new block with proper coinbase script
         CScript scriptPubKey;
-        static std::string cachedMinerAddress;
-        static CScript cachedMinerScript;
         
-        // Check if current block is within development fund active range
-        int nHeight = chainActive.Height() + 1;
-        bool isDevFundActive = (nHeight > Params().GetDevelopmentFundStartHeight()) && 
-                              (nHeight <= Params().GetLastDevelopmentFundBlockHeight());
-        
-        // Only use -mineraddress when development fund is active
         if (isDevFundActive) {
             std::string strMinerAddress = GetArg("-mineraddress", "");
             if (!strMinerAddress.empty()) {
-                // Only revalidate if address changed
-                if (strMinerAddress != cachedMinerAddress) {
-                    CBitcoinAddress addr(strMinerAddress);
-                    if (!addr.IsValid()) {
-                        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, 
-                            strprintf("Invalid miner address: '%s'. Must be a valid Junkcoin address.", strMinerAddress));
-                    }
-                    cachedMinerScript = GetScriptForDestination(addr.Get());
-                    if (cachedMinerScript.empty()) {
-                        throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to create script for miner address");
-                    }
-                    cachedMinerAddress = strMinerAddress;
+                CBitcoinAddress addr(strMinerAddress);
+                if (!addr.IsValid()) {
+                    throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, 
+                        strprintf("Invalid miner address: '%s'. Must be a valid Junkcoin address.", strMinerAddress));
                 }
-                scriptPubKey = cachedMinerScript;
+                scriptPubKey = GetScriptForDestination(addr.Get());
+                if (scriptPubKey.empty()) {
+                    throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to create script for miner address");
+                }
             } else {
                 // Development fund active but no -mineraddress specified
 #ifdef ENABLE_WALLET
@@ -631,20 +619,10 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
 #endif
             }
         } else {
-            // Outside development fund block range - fallback to original behavior
-            // Ignore -mineraddress
-#ifdef ENABLE_WALLET
-            if (!pwalletMain)
-                throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Wallet disabled and not in development fund block range.");
-            // Get new key from wallet
-            CPubKey pubkey;
-            if (!pwalletMain->GetKeyFromPool(pubkey))
-                throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, "Error: Keypool ran out.");
-            scriptPubKey = GetScriptForDestination(pubkey.GetID());
-#else
-            throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Junkcoin compiled without wallet and not in development fund block range.");
-#endif
+            // Outside development fund block range - fallback to original behavior with dummy script
+            scriptPubKey = CScript() << OP_TRUE;
         }
+
         pblocktemplate = BlockAssembler(Params()).CreateNewBlock(scriptPubKey, fMineWitnessTx);
         if (!pblocktemplate)
             throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
@@ -668,21 +646,23 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
     map<uint256, int64_t> setTxIndex;
     int i = 0;
     
-    // Proses transaksi untuk coinbase dan non-coinbase
-    for (const auto& it : pblock->vtx) {
-        const CTransaction& tx = *it;
+    // Check if current block is within development fund active range
+    int nHeight = pindexPrev->nHeight + 1;
+    bool isDevFundActive = (nHeight > Params().GetDevelopmentFundStartHeight()) && 
+                           (nHeight <= Params().GetLastDevelopmentFundBlockHeight());
+
+    // Process transactions for coinbase and non-coinbase
+    for (size_t idx = 0; idx < pblock->vtx.size(); ++idx) {
+        const CTransaction& tx = *pblock->vtx[idx];
         uint256 txHash = tx.GetHash();
         setTxIndex[txHash] = i++;
-    
-        if (tx.IsCoinBase() && !coinbasetxn)
-            continue;
-    
+
         UniValue entry(UniValue::VOBJ);
-    
+
         entry.pushKV("data", EncodeHexTx(tx));
         entry.pushKV("txid", txHash.GetHex());
         entry.pushKV("hash", tx.GetWitnessHash().GetHex());
-    
+
         UniValue deps(UniValue::VARR);
         BOOST_FOREACH (const CTxIn &in, tx.vin)
         {
@@ -690,33 +670,19 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
                 deps.push_back(setTxIndex[in.prevout.hash]);
         }
         entry.pushKV("depends", deps);
-    
-        int index_in_template = i - 1;
-        entry.pushKV("fee", pblocktemplate->vTxFees[index_in_template]);
-        int64_t nTxSigOps = pblocktemplate->vTxSigOpsCost[index_in_template];
-        if (fPreSegWit) {
-            assert(nTxSigOps % WITNESS_SCALE_FACTOR == 0);
-            nTxSigOps /= WITNESS_SCALE_FACTOR;
-        }
-        entry.pushKV("sigops", nTxSigOps);
-        entry.pushKV("weight", GetTransactionWeight(tx));
+
         if (tx.IsCoinBase()) {
             // Get block height to check if we're in development fund active range
-            int nHeight = pindexPrev->nHeight + 1;
-            bool isDevFundActive = (nHeight > Params().GetDevelopmentFundStartHeight()) && 
-                                 (nHeight <= Params().GetLastDevelopmentFundBlockHeight());
-                                 
-            // Display development fund output if applicable and in active block range
             if (isDevFundActive && tx.vout.size() > 1) {
                 // Development fund is always the second output in coinbase
                 entry.pushKV("developmentfund", (int64_t)tx.vout[1].nValue);
-    
+
                 // GITHUB issue #66 - Add founder address to gbt
                 const CScript & scriptPublicKey = tx.vout[1].scriptPubKey;
                 std::vector<CTxDestination> addresses;
                 txnouttype whichType;
                 int nRequired;
-    
+
                 ExtractDestinations(scriptPublicKey, whichType, addresses, nRequired);
                 UniValue o(UniValue::VARR);
                 for (const CTxDestination& addr : addresses) {
@@ -729,6 +695,15 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
             entry.pushKV("required", true);
             txCoinbase = entry;
         } else {
+            int index_in_template = idx - 1; // Adjust for coinbase being at index 0
+            entry.pushKV("fee", pblocktemplate->vTxFees[index_in_template]);
+            int64_t nTxSigOps = pblocktemplate->vTxSigOpsCost[index_in_template];
+            if (fPreSegWit) {
+                assert(nTxSigOps % WITNESS_SCALE_FACTOR == 0);
+                nTxSigOps /= WITNESS_SCALE_FACTOR;
+            }
+            entry.pushKV("sigops", nTxSigOps);
+            entry.pushKV("weight", GetTransactionWeight(tx));
             transactions.push_back(entry);
         }
     }
@@ -805,15 +780,15 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
 
     result.pushKV("previousblockhash", pblock->hashPrevBlock.GetHex());
     result.pushKV("transactions", transactions);
-    if (coinbasetxn) {
+    
+    // Only show coinbasetxn when development fund is active
+    if (isDevFundActive) {
         assert(txCoinbase.isObject());
         result.pushKV("coinbasetxn", txCoinbase);
-        result.pushKV("coinbaseaux", aux);
-        result.pushKV("coinbasevalue", (int64_t)(*pblock->vtx[0]).vout[0].nValue);
-    } else {
-        result.pushKV("coinbaseaux", aux);
-        result.pushKV("coinbasevalue", (int64_t)(*pblock->vtx[0]).vout[0].nValue);
     }
+    result.pushKV("coinbaseaux", aux);
+    result.pushKV("coinbasevalue", (int64_t)(*pblock->vtx[0]).vout[0].nValue);
+    
     result.pushKV("longpollid", chainActive.Tip()->GetBlockHash().GetHex() + i64tostr(nTransactionsUpdatedLast));
     result.pushKV("target", hashTarget.GetHex());
     result.pushKV("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1);
