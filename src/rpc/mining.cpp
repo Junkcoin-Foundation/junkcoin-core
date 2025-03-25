@@ -591,7 +591,7 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
 
         // Create new block with proper coinbase script
         CScript scriptPubKey;
-        
+
         if (isDevFundActive) {
             std::string strMinerAddress = GetArg("-mineraddress", "");
             if (!strMinerAddress.empty()) {
@@ -609,10 +609,22 @@ UniValue getblocktemplate(const JSONRPCRequest& request)
 #ifdef ENABLE_WALLET
                 if (!pwalletMain)
                     throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Wallet disabled and -mineraddress not set. Please specify a valid miner address when development fund is active.");
-                // Get new key from wallet
+
+                // Use a static reserve key to persist between calls
+                static CReserveKey reserveKey(pwalletMain);
                 CPubKey pubkey;
-                if (!pwalletMain->GetKeyFromPool(pubkey))
-                    throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, "Error: Keypool ran out. Please specify a miner address using -mineraddress.");
+                
+                if (!reserveKey.GetReservedKey(pubkey)) {
+                    // Keypool might be empty, try to top it up
+                    pwalletMain->TopUpKeyPool();
+                    
+                    // Try again after potential top-up
+                    if (!reserveKey.GetReservedKey(pubkey)) {
+                        throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, 
+                            "Error: Keypool ran out and couldn't be refilled. Please call keypoolrefill first or specify a miner address using -mineraddress.");
+                    }
+                }
+                
                 scriptPubKey = GetScriptForDestination(pubkey.GetID());
 #else
                 throw JSONRPCError(RPC_METHOD_NOT_FOUND, "Junkcoin compiled without wallet and -mineraddress not set. Please specify a valid miner address when development fund is active.");
