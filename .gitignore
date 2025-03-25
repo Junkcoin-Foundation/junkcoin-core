@@ -9,7 +9,7 @@ src/test/test_junkcoin
 src/test/test_junkcoin_fuzzy
 src/qt/test/test_junkcoin-qt
 src/bench/bench_junkcoin
-
+.windsurfrules
 # autoreconf
 Makefile.in
 aclocal.m4
