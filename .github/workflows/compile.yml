@@ -1,0 +1,297 @@
+# CI quality gate: runs on every push/PR. Proves the code compiles on all
+# supported platforms (CLI + Qt GUI) and stores binaries as action artifacts.
+name: Compile
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+    branches: [dev, master]
+  workflow_dispatch:
+
+env:
+  JOBS: 4
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Linux x86_64 - depends (incl. Qt) + full GUI
+  # ---------------------------------------------------------------------------
+  linux-amd64:
+    name: Linux x86_64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential libtool autotools-dev automake pkg-config \
+            bsdmainutils curl git python3 gperf bison ccache \
+            libxkbcommon-dev libxcb-xinerama0-dev
+
+      - name: Cache depends
+        uses: actions/cache@v5
+        with:
+          path: |
+            depends/built
+            depends/sources
+            depends/work
+            depends/SDKs
+          key: depends-qt-linux-amd64-v1-${{ hashFiles('depends/packages/*', 'depends/patches/**', 'depends/Makefile', 'depends/hosts/**', 'depends/builders/**', 'depends/funcs.mk') }}
+          restore-keys: depends-qt-linux-amd64-v1-
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: .ccache-linux-amd64
+          key: ccache-linux-amd64-${{ hashFiles('src/**', 'configure.ac', 'src/Makefile.am') }}
+          restore-keys: ccache-linux-amd64-
+
+      - name: Build depends (with Qt)
+        run: make -C depends HOST=x86_64-pc-linux-gnu -j${JOBS}
+
+      - name: Configure and build (with Qt)
+        run: |
+          set -e
+          export CCACHE_DIR="$PWD/.ccache-linux-amd64"
+          export CCACHE_COMPRESS=1
+          export CCACHE_MAXSIZE=700M
+          export CC="ccache gcc"
+          export CXX="ccache g++"
+          ./autogen.sh
+          CONFIG_SITE="$PWD/depends/x86_64-pc-linux-gnu/share/config.site" ./configure \
+            --prefix="$PWD/depends/x86_64-pc-linux-gnu" \
+            --disable-tests \
+            --disable-bench \
+            --disable-gui-tests \
+            --with-gui=qt5 \
+            --with-incompatible-bdb
+          make -j${JOBS}
+          test -x src/junkcoind
+          test -x src/junkcoin-cli
+          test -x src/junkcoin-tx
+          test -x src/qt/junkcoin-qt
+          ./src/junkcoind -version | head -5
+          file src/qt/junkcoin-qt
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux-x86_64
+          path: |
+            src/junkcoind
+            src/junkcoin-cli
+            src/junkcoin-tx
+            src/qt/junkcoin-qt
+
+  # ---------------------------------------------------------------------------
+  # Linux aarch64 - depends with Qt (native arm runner)
+  # ---------------------------------------------------------------------------
+  linux-arm64:
+    name: Linux aarch64
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential libtool autotools-dev automake pkg-config \
+            bsdmainutils curl git python3 gperf bison ccache \
+            libxkbcommon-dev libxcb-xinerama0-dev
+
+      - name: Cache depends
+        uses: actions/cache@v5
+        with:
+          path: |
+            depends/built
+            depends/sources
+            depends/work
+            depends/SDKs
+          key: depends-qt-linux-arm64-v1-${{ hashFiles('depends/packages/*', 'depends/patches/**', 'depends/Makefile', 'depends/hosts/**', 'depends/builders/**', 'depends/funcs.mk') }}
+          restore-keys: depends-qt-linux-arm64-v1-
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: .ccache-linux-arm64
+          key: ccache-linux-arm64-${{ hashFiles('src/**', 'configure.ac', 'src/Makefile.am') }}
+          restore-keys: ccache-linux-arm64-
+
+      - name: Build depends (with Qt)
+        run: |
+          HOST="$(./depends/config.guess)"
+          echo "HOST=$HOST"
+          echo "HOST=$HOST" >> "$GITHUB_ENV"
+          make -C depends HOST="$HOST" -j${JOBS}
+
+      - name: Configure and build (with Qt)
+        run: |
+          set -e
+          export CCACHE_DIR="$PWD/.ccache-linux-arm64"
+          export CCACHE_COMPRESS=1
+          export CCACHE_MAXSIZE=700M
+          export CC="ccache gcc"
+          export CXX="ccache g++"
+          ./autogen.sh
+          CONFIG_SITE="$PWD/depends/${HOST}/share/config.site" ./configure \
+            --prefix="$PWD/depends/${HOST}" \
+            --disable-tests \
+            --disable-bench \
+            --disable-gui-tests \
+            --with-gui=qt5 \
+            --with-incompatible-bdb
+          make -j${JOBS}
+          test -x src/junkcoind
+          test -x src/junkcoin-cli
+          test -x src/junkcoin-tx
+          test -x src/qt/junkcoin-qt
+          ./src/junkcoind -version | head -5
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux-aarch64
+          path: |
+            src/junkcoind
+            src/junkcoin-cli
+            src/junkcoin-tx
+            src/qt/junkcoin-qt
+
+  # ---------------------------------------------------------------------------
+  # Windows x86_64 - mingw depends with Qt
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Windows x86_64
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential libtool autotools-dev automake pkg-config \
+            bsdmainutils curl git python3 gperf bison ccache \
+            g++-mingw-w64-x86-64 nsis zip
+          sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+          sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+
+      - name: Cache depends
+        uses: actions/cache@v5
+        with:
+          path: |
+            depends/built
+            depends/sources
+            depends/work
+            depends/SDKs
+          key: depends-qt-win-amd64-v1-${{ hashFiles('depends/packages/*', 'depends/patches/**', 'depends/Makefile', 'depends/hosts/**', 'depends/builders/**', 'depends/funcs.mk') }}
+          restore-keys: depends-qt-win-amd64-v1-
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: .ccache-win-amd64
+          key: ccache-win-amd64-${{ hashFiles('src/**', 'configure.ac', 'src/Makefile.am') }}
+          restore-keys: ccache-win-amd64-
+
+      - name: Build depends (with Qt)
+        run: make -C depends HOST=x86_64-w64-mingw32 -j${JOBS}
+
+      - name: Configure and build (with Qt)
+        run: |
+          set -e
+          export CCACHE_DIR="$PWD/.ccache-win-amd64"
+          export CCACHE_COMPRESS=1
+          export CCACHE_MAXSIZE=700M
+          export CC="ccache x86_64-w64-mingw32-gcc"
+          export CXX="ccache x86_64-w64-mingw32-g++"
+          ./autogen.sh
+          CONFIG_SITE="$PWD/depends/x86_64-w64-mingw32/share/config.site" ./configure \
+            --prefix="$PWD/depends/x86_64-w64-mingw32" \
+            --host=x86_64-w64-mingw32 \
+            --disable-tests \
+            --disable-bench \
+            --disable-gui-tests \
+            --with-gui=qt5 \
+            --with-incompatible-bdb \
+            --without-boost-process
+          make -j${JOBS}
+          test -f src/junkcoind.exe
+          test -f src/junkcoin-cli.exe
+          test -f src/junkcoin-tx.exe
+          test -f src/qt/junkcoin-qt.exe
+          ls -lah src/junkcoind.exe src/junkcoin-cli.exe src/junkcoin-tx.exe src/qt/junkcoin-qt.exe
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows-x86_64
+          path: |
+            src/junkcoind.exe
+            src/junkcoin-cli.exe
+            src/junkcoin-tx.exe
+            src/qt/junkcoin-qt.exe
+
+  # ---------------------------------------------------------------------------
+  # macOS arm64 - Homebrew Qt5 (full GUI)
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macOS arm64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Homebrew dependencies
+        run: |
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          brew update
+          brew install automake libtool boost miniupnpc pkg-config python qt@5 libevent qrencode fmt berkeley-db@5 librsvg ccache
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: .ccache-macos-arm64
+          key: ccache-macos-arm64-${{ hashFiles('src/**', 'configure.ac', 'src/Makefile.am') }}
+          restore-keys: ccache-macos-arm64-
+
+      - name: Configure and build
+        run: |
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          export PATH="/opt/homebrew/opt/qt@5/bin:$PATH"
+          export CCACHE_DIR="$PWD/.ccache-macos-arm64"
+          export CCACHE_COMPRESS=1
+          export CCACHE_MAXSIZE=700M
+          export CC="ccache clang"
+          export CXX="ccache clang++"
+          ./autogen.sh
+          ./configure \
+            --enable-c++17 \
+            --with-gui=qt5 \
+            --with-incompatible-bdb \
+            --disable-zmq \
+            --disable-tests \
+            --disable-bench \
+            --without-miniupnpc \
+            --with-boost="$(brew --prefix boost)" \
+            BDB_CFLAGS="-I$(brew --prefix berkeley-db@5)/include" \
+            BDB_LIBS="-L$(brew --prefix berkeley-db@5)/lib -ldb_cxx" \
+            CPPFLAGS="-I/opt/homebrew/include" \
+            LDFLAGS="-L/opt/homebrew/lib" \
+            PKG_CONFIG_PATH="$(brew --prefix qt@5)/lib/pkgconfig:$(brew --prefix sqlite)/lib/pkgconfig:$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix fmt)/lib/pkgconfig" \
+            CXXFLAGS="-O2 -g -std=c++17" \
+            CFLAGS="-O2 -g"
+          make -j"$(sysctl -n hw.ncpu)"
+          test -x src/junkcoind
+          test -x src/junkcoin-cli
+          test -x src/junkcoin-tx
+          test -x src/qt/junkcoin-qt
+          ./src/junkcoind -version | head -5
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: macos-arm64
+          path: |
+            src/junkcoind
+            src/junkcoin-cli
+            src/junkcoin-tx
+            src/qt/junkcoin-qt

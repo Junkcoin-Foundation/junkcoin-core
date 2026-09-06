@@ -1,0 +1,36 @@
+# CODEOWNERS — who must review what
+#
+# Every PR touching these paths requires an approving review from the listed
+# owner(s). Create the GitHub team(s) below in
+# https://github.com/Junkcoin-Foundation/junkcoin/settings/teams
+# and grant them "write" access, or replace with the username of the
+# maintainer who is the consensus/security reviewer.
+
+# Consensus rules — always review by a human consensus reviewer
+/src/consensus/          @Junkcoin-Foundation/consensus-review
+/src/chainparams.cpp     @Junkcoin-Foundation/consensus-review
+/src/consensus/params.h  @Junkcoin-Foundation/consensus-review
+
+# Script interpreter & opcodes (re-enabled legacy opcodes, any script rule)
+/src/script/             @Junkcoin-Foundation/consensus-review
+/src/script/interpreter.cpp @Junkcoin-Foundation/consensus-review
+/src/script/interpreter.h   @Junkcoin-Foundation/consensus-review
+
+# Validation & transaction/block acceptance
+/src/validation.cpp      @Junkcoin-Foundation/consensus-review
+/src/validation.h        @Junkcoin-Foundation/consensus-review
+
+# Crypto: signature, hashing, ZK (do not vendor/rewrite without review)
+/src/crypto/             @Junkcoin-Foundation/consensus-review
+
+# MWEB — confidential transaction consensus
+/src/mweb/               @Junkcoin-Foundation/consensus-review
+/src/libmw/              @Junkcoin-Foundation/consensus-review
+
+# Wallet key derivation / HD paths — funds-loss risk
+/src/wallet/             @Junkcoin-Foundation/core-review
+
+# Release-critical files — versioning, gitian, seeds, assume-valid stats
+configure.ac             @Junkcoin-Foundation/core-review
+/contrib/gitian-descriptors/ @Junkcoin-Foundation/core-review
+/contrib/seeds/          @Junkcoin-Foundation/core-review

@@ -1,0 +1,14 @@
+Doxyfile
+
+# Research documents (LaTeX)
+*.tex
+*.aux
+*.log
+*.out
+*.toc
+*.pdf
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg

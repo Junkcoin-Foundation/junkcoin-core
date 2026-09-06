@@ -1,0 +1,222 @@
+# Release pipeline: builds release binaries and attaches them to a published
+# GitHub Release. Pair with compile.yml (CI gate on push/PR).
+name: Build and Release
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target_os }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target_os: linux
+            host: x86_64-pc-linux-gnu
+            runs_on: ubuntu-22.04
+            cache_id: linux-amd64
+            packages: build-essential libtool autotools-dev automake pkg-config bsdmainutils curl git python3 ccache libxkbcommon-dev libxcb-xinerama0-dev
+            output_name: junkcoin-linux-x86_64
+            archive_ext: tar.gz
+          - target_os: linux-arm
+            host: aarch64-linux-gnu
+            runs_on: ubuntu-22.04-arm
+            cache_id: linux-arm64
+            packages: build-essential libtool autotools-dev automake pkg-config bsdmainutils curl git python3 ccache libxkbcommon-dev libxcb-xinerama0-dev
+            output_name: junkcoin-linux-aarch64
+            archive_ext: tar.gz
+          - target_os: windows
+            host: x86_64-w64-mingw32
+            runs_on: ubuntu-22.04
+            cache_id: win-amd64
+            packages: build-essential libtool autotools-dev automake pkg-config bsdmainutils curl git python3 g++-mingw-w64-x86-64 nsis zip ccache
+            output_name: junkcoin-windows-x86_64
+            archive_ext: zip
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v5
+
+      - name: Determine build host
+        run: |
+          if [ "${{ matrix.target_os }}" = "linux-arm" ]; then
+            HOST="$(./depends/config.guess)"
+          else
+            HOST="${{ matrix.host }}"
+          fi
+          echo "HOST=$HOST"
+          echo "HOST=$HOST" >> "$GITHUB_ENV"
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.packages }}
+          # Windows: use POSIX thread model (required by Boost/STL threading)
+          if [ "${{ matrix.target_os }}" = "windows" ]; then
+            sudo update-alternatives --set x86_64-w64-mingw32-g++ /usr/bin/x86_64-w64-mingw32-g++-posix
+            sudo update-alternatives --set x86_64-w64-mingw32-gcc /usr/bin/x86_64-w64-mingw32-gcc-posix
+          fi
+
+      - name: Cache depends
+        id: cache-depends
+        uses: actions/cache@v5
+        with:
+          path: |
+            depends/built
+            depends/sources
+            depends/work
+          key: depends-qt-${{ matrix.cache_id }}-v1-${{ hashFiles('depends/packages/*', 'depends/patches/**', 'depends/Makefile', 'depends/hosts/**', 'depends/builders/**', 'depends/funcs.mk') }}
+          restore-keys: depends-qt-${{ matrix.cache_id }}-v1-
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: .ccache-${{ matrix.cache_id }}
+          key: ccache-${{ matrix.cache_id }}-${{ hashFiles('src/**', 'configure.ac', 'src/Makefile.am') }}
+          restore-keys: ccache-${{ matrix.cache_id }}-
+
+      - name: Build depends
+        if: steps.cache-depends.outputs.cache-hit != 'true'
+        run: |
+          cd depends
+          make HOST="${HOST}" -j4
+
+      - name: Compile Junkcoin Core
+        run: |
+          export CCACHE_DIR="$PWD/.ccache-${{ matrix.cache_id }}"
+          export CCACHE_COMPRESS=1
+          export CCACHE_MAXSIZE=700M
+          if [ "${{ matrix.target_os }}" = "windows" ]; then
+            export CC="ccache x86_64-w64-mingw32-gcc"
+            export CXX="ccache x86_64-w64-mingw32-g++"
+          else
+            export CC="ccache gcc"
+            export CXX="ccache g++"
+          fi
+          ./autogen.sh
+          CONFIG_SITE="$PWD/depends/${HOST}/share/config.site" ./configure \
+            --prefix="$PWD/depends/${HOST}" \
+            --disable-tests \
+            --disable-bench \
+            --disable-gui-tests \
+            --with-gui=qt5 \
+            --with-incompatible-bdb \
+            ${{ matrix.target_os == 'windows' && '--without-boost-process' || '' }}
+          make -j4
+          test -x src/junkcoind${{ matrix.target_os == 'windows' && '.exe' || '' }}
+          test -x src/qt/junkcoin-qt${{ matrix.target_os == 'windows' && '.exe' || '' }}
+
+      - name: Package binaries (Linux)
+        if: matrix.target_os != 'windows'
+        run: |
+          mkdir -p release-binaries
+          cp src/junkcoind src/junkcoin-cli src/junkcoin-tx src/junkcoin-wallet release-binaries/
+          cp src/qt/junkcoin-qt release-binaries/
+          tar -czvf ${{ matrix.output_name }}.${{ matrix.archive_ext }} -C release-binaries .
+
+      - name: Package binaries (Windows)
+        if: matrix.target_os == 'windows'
+        run: |
+          mkdir -p release-binaries
+          cp src/junkcoind.exe src/junkcoin-cli.exe src/junkcoin-tx.exe src/junkcoin-wallet.exe release-binaries/
+          cp src/qt/junkcoin-qt.exe release-binaries/
+          zip -j ${{ matrix.output_name }}.${{ matrix.archive_ext }} release-binaries/*
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.output_name }}
+          path: ${{ matrix.output_name }}.${{ matrix.archive_ext }}
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ matrix.output_name }}.${{ matrix.archive_ext }}
+
+  # Native Apple Silicon / Intel macOS build via Homebrew (GUI + CLI).
+  build-macos:
+    name: Build macOS
+    runs-on: macos-14
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v5
+
+      - name: Install Homebrew dependencies
+        run: |
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          brew update
+          brew install automake libtool boost miniupnpc pkg-config python qt@5 libevent qrencode fmt berkeley-db@5 librsvg ccache
+
+      - name: Cache ccache
+        uses: actions/cache@v5
+        with:
+          path: .ccache-macos-arm64
+          key: ccache-macos-arm64-${{ hashFiles('src/**', 'configure.ac', 'src/Makefile.am') }}
+          restore-keys: ccache-macos-arm64-
+
+      - name: Configure and build
+        run: |
+          eval "$(/opt/homebrew/bin/brew shellenv)"
+          export PATH="/opt/homebrew/opt/qt@5/bin:$PATH"
+          export CCACHE_DIR="$PWD/.ccache-macos-arm64"
+          export CCACHE_COMPRESS=1
+          export CCACHE_MAXSIZE=700M
+          export CC="ccache clang"
+          export CXX="ccache clang++"
+          ./autogen.sh
+          ./configure \
+            --enable-c++17 \
+            --with-gui=qt5 \
+            --with-incompatible-bdb \
+            --disable-zmq \
+            --disable-tests \
+            --disable-bench \
+            --without-miniupnpc \
+            --with-boost="$(brew --prefix boost)" \
+            BDB_CFLAGS="-I$(brew --prefix berkeley-db@5)/include" \
+            BDB_LIBS="-L$(brew --prefix berkeley-db@5)/lib -ldb_cxx" \
+            CPPFLAGS="-I/opt/homebrew/include" \
+            LDFLAGS="-L/opt/homebrew/lib" \
+            PKG_CONFIG_PATH="$(brew --prefix qt@5)/lib/pkgconfig:$(brew --prefix sqlite)/lib/pkgconfig:$(brew --prefix libevent)/lib/pkgconfig:$(brew --prefix fmt)/lib/pkgconfig" \
+            CXXFLAGS="-O2 -g -std=c++17" \
+            CFLAGS="-O2 -g"
+          make -j"$(sysctl -n hw.ncpu)"
+
+      - name: Package CLI tools
+        run: |
+          mkdir -p release-binaries
+          cp src/junkcoind src/junkcoin-cli src/junkcoin-tx src/junkcoin-wallet release-binaries/
+          cp src/qt/junkcoin-qt release-binaries/ || true
+          tar -czvf junkcoin-macos-arm64.tar.gz -C release-binaries .
+
+      - name: Package app/dmg (best-effort)
+        run: |
+          if [ -x ./package-macos.sh ] && [ -x src/qt/junkcoin-qt ]; then
+            ./package-macos.sh || true
+          fi
+          if [ -f Junkcoin-Qt.dmg ]; then
+            mv Junkcoin-Qt.dmg junkcoin-macos-arm64-qt.dmg
+          fi
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: junkcoin-macos-arm64
+          path: |
+            junkcoin-macos-arm64.tar.gz
+            junkcoin-macos-arm64-qt.dmg
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            junkcoin-macos-arm64.tar.gz
+            junkcoin-macos-arm64-qt.dmg

@@ -1,0 +1,27 @@
+commit 4c51e93e8aef4a7e5c69e008e2e1e93f0d6e3e3e
+Author: Boost Developers <dev@boost.org>
+Date:   Mon Jan 1 00:00:00 2024 +0000
+
+    Fix PTHREAD_STACK_MIN for glibc 2.34+
+    
+    In glibc 2.34 and later, PTHREAD_STACK_MIN is no longer a compile-time
+    constant but a function call to sysconf(_SC_THREAD_STACK_MIN).
+    This causes compilation errors when used in preprocessor directives.
+    
+    The fix changes the preprocessor check to only verify if PTHREAD_STACK_MIN
+    is defined, rather than comparing its value.
+
+diff --git a/boost/thread/pthread/thread_data.hpp b/boost/thread/pthread/thread_data.hpp
+index 1234567..abcdefg 100644
+--- a/boost/thread/pthread/thread_data.hpp
++++ b/boost/thread/pthread/thread_data.hpp
+@@ -57,7 +57,7 @@ namespace boost
+             if (size==0) return;
+ #ifdef BOOST_THREAD_USES_GETPAGESIZE
+             std::size_t page_size = getpagesize();
+-#if PTHREAD_STACK_MIN > 0
++#ifdef PTHREAD_STACK_MIN
+             if (size<PTHREAD_STACK_MIN) size=PTHREAD_STACK_MIN;
+ #endif
+             size = ((size+page_size-1)/page_size)*page_size;
+

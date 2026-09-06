@@ -1,0 +1,51 @@
+# Ignore build artifacts
+src/*.o
+src/*.a
+src/.deps/
+src/.libs/
+src/bench/bench_junkcoin
+src/test/test_junkcoin
+src/junkcoin-cli
+src/junkcoin-tx
+src/junkcoind
+src/junkcoin-wallet
+src/qt/junkcoin-qt
+
+# Ignore depends build
+depends/built/
+depends/work/
+depends/sources/
+depends/x86_64-*
+depends/i686-*
+depends/arm-*
+depends/aarch64-*
+
+# Ignore autogen files
+autom4te.cache/
+config.log
+config.status
+configure
+Makefile
+Makefile.in
+aclocal.m4
+
+# Ignore git
+.git/
+.gitignore
+
+# Ignore IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Ignore documentation
+doc/
+
+# Ignore test data
+src/test/data/
+
+# Ignore ccache
+.ccache/
+
