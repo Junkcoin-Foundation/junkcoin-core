@@ -121,7 +121,6 @@ void SendCoinsEntry::clear()
 
 void SendCoinsEntry::checkSubtractFeeFromAmount()
 {
-    if (pegInAddress.size() || pegout) return;
     ui->checkboxSubtractFeeFromAmount->setChecked(true);
 }
 
