@@ -10,6 +10,7 @@
 #include <util/system.h>
 
 static std::atomic<bool> g_initial_block_download_completed(false);
+static std::atomic<bool> g_mweb_activation_completed(false);
 
 namespace NetMsgType {
 const char *VERSION="version";
@@ -156,7 +157,7 @@ ServiceFlags GetDesirableServiceFlags(ServiceFlags services) {
     if (consensus.SegwitHeight != std::numeric_limits<int>::max()) {
         desirable = ServiceFlags(desirable | NODE_WITNESS);
     }
-    if (consensus.MWEBHeight != std::numeric_limits<int>::max()) {
+    if (consensus.MWEBHeight != std::numeric_limits<int>::max() && g_mweb_activation_completed) {
         desirable = ServiceFlags(desirable | NODE_MWEB);
     }
     return desirable;
@@ -164,6 +165,10 @@ ServiceFlags GetDesirableServiceFlags(ServiceFlags services) {
 
 void SetServiceFlagsIBDCache(bool state) {
     g_initial_block_download_completed = state;
+}
+
+void SetServiceFlagsMWEBActivationCache(bool state) {
+    g_mweb_activation_completed = state;
 }
 
 CInv::CInv()

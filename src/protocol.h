@@ -368,6 +368,9 @@ ServiceFlags GetDesirableServiceFlags(ServiceFlags services);
 /** Set the current IBD status in order to figure out the desirable service flags */
 void SetServiceFlagsIBDCache(bool status);
 
+/** Set the current MWEB activation status in order to figure out the desirable service flags */
+void SetServiceFlagsMWEBActivationCache(bool status);
+
 /**
  * A shortcut for (services & GetDesirableServiceFlags(services))
  * == GetDesirableServiceFlags(services), ie determines whether the given

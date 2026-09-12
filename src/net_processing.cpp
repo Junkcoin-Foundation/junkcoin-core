@@ -1401,6 +1401,10 @@ void PeerManager::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockInde
     m_connman.SetBestHeight(nNewHeight);
 
     SetServiceFlagsIBDCache(!fInitialDownload);
+    const Consensus::Params& consensus = Params().GetConsensus(0);
+    if (nNewHeight >= consensus.MWEBHeight) {
+        SetServiceFlagsMWEBActivationCache(true);
+    }
     if (!fInitialDownload) {
         // Find the hashes of all blocks that weren't previously in the best chain.
         std::vector<uint256> vHashes;
